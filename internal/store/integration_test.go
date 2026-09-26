@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BloodShotAK/pgblame/internal/catalog"
-	"github.com/BloodShotAK/pgblame/internal/pgss"
-	"github.com/BloodShotAK/pgblame/internal/store"
-	"github.com/BloodShotAK/pgblame/internal/testpg"
+	"github.com/BloodShotAK/pgculprit/internal/catalog"
+	"github.com/BloodShotAK/pgculprit/internal/pgss"
+	"github.com/BloodShotAK/pgculprit/internal/store"
+	"github.com/BloodShotAK/pgculprit/internal/testpg"
 )
 
 func TestIntegrationStoreRoundTrip(t *testing.T) {

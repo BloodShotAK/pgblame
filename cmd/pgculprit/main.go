@@ -1,4 +1,4 @@
-// Command pgblame detects Postgres query regressions.
+// Command pgculprit detects Postgres query regressions.
 package main
 
 import (
@@ -19,26 +19,26 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/BloodShotAK/pgblame/internal/collector"
-	"github.com/BloodShotAK/pgblame/internal/detect"
-	"github.com/BloodShotAK/pgblame/internal/preflight"
-	"github.com/BloodShotAK/pgblame/internal/store"
+	"github.com/BloodShotAK/pgculprit/internal/collector"
+	"github.com/BloodShotAK/pgculprit/internal/detect"
+	"github.com/BloodShotAK/pgculprit/internal/preflight"
+	"github.com/BloodShotAK/pgculprit/internal/store"
 )
 
 var version = "dev"
 
-const usage = `pgblame detects Postgres query regressions.
+const usage = `pgculprit detects Postgres query regressions.
 
 Usage:
-  pgblame check   --target-dsn DSN    verify a server is ready to be monitored
-  pgblame collect --target-dsn DSN --store-dsn DSN
+  pgculprit check   --target-dsn DSN    verify a server is ready to be monitored
+  pgculprit collect --target-dsn DSN --store-dsn DSN
                                         poll the server and record what it runs
-  pgblame regressions --store-dsn DSN show queries that got slower than their baseline
-  pgblame top     --store-dsn DSN     show the busiest recorded queries
-  pgblame version
+  pgculprit regressions --store-dsn DSN show queries that got slower than their baseline
+  pgculprit top     --store-dsn DSN     show the busiest recorded queries
+  pgculprit version
 
-DSNs can also come from PGBLAME_TARGET_DSN and PGBLAME_STORE_DSN.
-Run "pgblame <command> -h" for a command's flags.
+DSNs can also come from PGCULPRIT_TARGET_DSN and PGCULPRIT_STORE_DSN.
+Run "pgculprit <command> -h" for a command's flags.
 `
 
 func main() {
@@ -68,7 +68,7 @@ func main() {
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "pgblame:", err)
+		fmt.Fprintln(os.Stderr, "pgculprit:", err)
 		os.Exit(1)
 	}
 }
@@ -85,9 +85,9 @@ func connect(ctx context.Context, what, dsn string) (*pgxpool.Pool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s DSN: %w", what, err)
 	}
-	cfg.ConnConfig.RuntimeParams["application_name"] = "pgblame"
+	cfg.ConnConfig.RuntimeParams["application_name"] = "pgculprit"
 	if what == "target" {
-		// pgblame is a guest on the monitored server: at most two sessions,
+		// pgculprit is a guest on the monitored server: at most two sessions,
 		// read-only, and it gives up rather than wait on locks or run long.
 		cfg.MaxConns = 2
 		for k, v := range map[string]string{
@@ -114,7 +114,7 @@ func connect(ctx context.Context, what, dsn string) (*pgxpool.Pool, error) {
 
 func runCheck(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
-	targetDSN := dsnFlag(fs, "target-dsn", "PGBLAME_TARGET_DSN", "server to monitor")
+	targetDSN := dsnFlag(fs, "target-dsn", "PGCULPRIT_TARGET_DSN", "server to monitor")
 	fs.Parse(args)
 
 	target, err := connect(ctx, "target", *targetDSN)
@@ -141,8 +141,8 @@ func runCheck(ctx context.Context, args []string) error {
 
 func runCollect(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("collect", flag.ExitOnError)
-	targetDSN := dsnFlag(fs, "target-dsn", "PGBLAME_TARGET_DSN", "server to monitor")
-	storeDSN := dsnFlag(fs, "store-dsn", "PGBLAME_STORE_DSN", "database pgblame writes to")
+	targetDSN := dsnFlag(fs, "target-dsn", "PGCULPRIT_TARGET_DSN", "server to monitor")
+	storeDSN := dsnFlag(fs, "store-dsn", "PGCULPRIT_STORE_DSN", "database pgculprit writes to")
 	name := fs.String("target-name", "", "stable name for the target (default host:port/database)")
 	interval := fs.Duration("interval", time.Minute, "how often to poll pg_stat_statements")
 	catalogInterval := fs.Duration("catalog-interval", 5*time.Minute, "how often to snapshot the catalog")
@@ -151,7 +151,7 @@ func runCollect(ctx context.Context, args []string) error {
 	retention := store.DefaultRetention()
 	fs.DurationVar(&retention.Raw, "raw-retention", retention.Raw, "how long per-interval samples are kept")
 	fs.DurationVar(&retention.Hourly, "hourly-retention", retention.Hourly, "how long hourly rollups are kept")
-	includeSelf := fs.Bool("include-self", false, "keep pgblame's own queries in the data")
+	includeSelf := fs.Bool("include-self", false, "keep pgculprit's own queries in the data")
 	logFormat := fs.String("log-format", "text", "text or json")
 	verbose := fs.Bool("v", false, "debug logging")
 	fs.Parse(args)
@@ -191,7 +191,7 @@ func runCollect(ctx context.Context, args []string) error {
 
 func runTop(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("top", flag.ExitOnError)
-	storeDSN := dsnFlag(fs, "store-dsn", "PGBLAME_STORE_DSN", "database pgblame writes to")
+	storeDSN := dsnFlag(fs, "store-dsn", "PGCULPRIT_STORE_DSN", "database pgculprit writes to")
 	since := fs.Duration("since", 15*time.Minute, "window to aggregate over")
 	limit := fs.Int("n", 10, "number of queries to show")
 	fs.Parse(args)
@@ -230,7 +230,7 @@ func detectFlags(fs *flag.FlagSet) *detect.Config {
 
 func runRegressions(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("regressions", flag.ExitOnError)
-	storeDSN := dsnFlag(fs, "store-dsn", "PGBLAME_STORE_DSN", "database pgblame writes to")
+	storeDSN := dsnFlag(fs, "store-dsn", "PGCULPRIT_STORE_DSN", "database pgculprit writes to")
 	targetName := fs.String("target", "", "target name (needed when the store has several)")
 	cfg := detectFlags(fs)
 	fs.Parse(args)

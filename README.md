@@ -1,17 +1,17 @@
-# pgblame
+# pgculprit
 
-[![CI](https://github.com/BloodShotAK/pgblame/actions/workflows/ci.yml/badge.svg)](https://github.com/BloodShotAK/pgblame/actions/workflows/ci.yml)
+[![CI](https://github.com/BloodShotAK/pgculprit/actions/workflows/ci.yml/badge.svg)](https://github.com/BloodShotAK/pgculprit/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%E2%80%9318-336791.svg)](#usage)
 
-**`git blame` for slow Postgres queries.**
+**Find the culprit behind slow Postgres queries.**
 
-pgblame notices when a query gets slower than it normally is, and helps you
+pgculprit notices when a query gets slower than it normally is, and helps you
 find out what changed: a dropped index, a planner setting, or shifted
 statistics.
 
 ```
-$ pgblame regressions
+$ pgculprit regressions
 as of 2026-09-26 18:07:33: 1 regressed, 6 healthy, 2 with too little traffic to judge
 
   extra/hour  baseline ms  now ms  ratio  calls       kind  query
@@ -45,14 +45,14 @@ regressions are usually found by users first and diagnosed by hand.
 ```mermaid
 flowchart LR
     db[("Your Postgres<br/>pg_stat_statements<br/>and catalog")]
-    subgraph collect["pgblame collect"]
+    subgraph collect["pgculprit collect"]
         direction TB
         poll["Poll statements<br/>every minute"]
         snap["Snapshot catalog<br/>every 5 minutes"]
         detect["Detect regressions<br/>every minute"]
     end
     store[("Store<br/>samples, rollups,<br/>catalog history,<br/>regressions")]
-    out["pgblame regressions<br/>and logs"]
+    out["pgculprit regressions<br/>and logs"]
 
     db -- "read-only" --> poll
     db -- "read-only" --> snap
@@ -63,7 +63,7 @@ flowchart LR
 ```
 
 The collector writes everything to a store database you host, so the
-monitored server gets no pgblame tables.
+monitored server gets no pgculprit tables.
 
 ## Quickstart
 
@@ -90,20 +90,20 @@ make regressions
 1. Add `pg_stat_statements` to `shared_preload_libraries` and restart. On
    managed Postgres, set it through the provider's parameter settings.
 2. Run [`deploy/target/setup.sql`](deploy/target/setup.sql) to create the
-   extension and a `pgblame` role with `pg_monitor`.
+   extension and a `pgculprit` role with `pg_monitor`.
 3. Optionally, run [`deploy/target/helper.sql`](deploy/target/helper.sql)
-   in each database so pgblame can read column statistics for every table.
+   in each database so pgculprit can read column statistics for every table.
 4. Check the server, then start collecting:
 
 ```sh
-pgblame check   --target-dsn "postgres://pgblame@db:5432/app?sslmode=verify-full"
-pgblame collect --target-dsn "postgres://pgblame@db:5432/app?sslmode=verify-full" \
-                --store-dsn  "postgres://pgblame@store:5432/pgblame"
-pgblame regressions --store-dsn "postgres://pgblame@store:5432/pgblame"
+pgculprit check   --target-dsn "postgres://pgculprit@db:5432/app?sslmode=verify-full"
+pgculprit collect --target-dsn "postgres://pgculprit@db:5432/app?sslmode=verify-full" \
+                --store-dsn  "postgres://pgculprit@store:5432/pgculprit"
+pgculprit regressions --store-dsn "postgres://pgculprit@store:5432/pgculprit"
 ```
 
 `check` lists everything that's missing, with the fix for each. DSNs can
-also be set with `PGBLAME_TARGET_DSN` and `PGBLAME_STORE_DSN`.
+also be set with `PGCULPRIT_TARGET_DSN` and `PGCULPRIT_STORE_DSN`.
 
 ## How detection works
 
@@ -123,7 +123,7 @@ database time per hour. The regression closes once the query recovers.
 ## Resource usage
 
 - Read-only sessions, at most two connections, each with a 10s statement
-  timeout and a 1s lock timeout, so pgblame gives up rather than wait on
+  timeout and a 1s lock timeout, so pgculprit gives up rather than wait on
   your workload.
 - Each cycle's cost grows with the number of distinct queries and tables,
   not with the amount of data. Column statistics are re-read only for
@@ -136,7 +136,7 @@ database and times each read.
 
 ## Security
 
-pgblame never writes to the database it watches, and it redacts passwords
+pgculprit never writes to the database it watches, and it redacts passwords
 from query texts before storing them. See [SECURITY.md](SECURITY.md).
 
 ## Development

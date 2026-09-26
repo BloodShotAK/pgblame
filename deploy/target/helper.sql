@@ -1,12 +1,12 @@
--- SECURITY DEFINER wrapper so the pgblame role can read planner stats without table access.
+-- SECURITY DEFINER wrapper so the pgculprit role can read planner stats without table access.
 -- Leaves out histograms and most-common values, which contain real data. Install per database.
 
-CREATE SCHEMA IF NOT EXISTS pgblame;
+CREATE SCHEMA IF NOT EXISTS pgculprit;
 
-DROP FUNCTION IF EXISTS pgblame.column_stats();
-DROP FUNCTION IF EXISTS pgblame.column_stats(text[], text[]);
+DROP FUNCTION IF EXISTS pgculprit.column_stats();
+DROP FUNCTION IF EXISTS pgculprit.column_stats(text[], text[]);
 
-CREATE OR REPLACE FUNCTION pgblame.column_stats(schemas name[], tables name[])
+CREATE OR REPLACE FUNCTION pgculprit.column_stats(schemas name[], tables name[])
 RETURNS TABLE (
     schemaname  name,
     tablename   name,
@@ -32,6 +32,6 @@ BEGIN
 END
 $$;
 
-REVOKE ALL ON FUNCTION pgblame.column_stats(name[], name[]) FROM PUBLIC;
-GRANT USAGE ON SCHEMA pgblame TO pgblame;
-GRANT EXECUTE ON FUNCTION pgblame.column_stats(name[], name[]) TO pgblame;
+REVOKE ALL ON FUNCTION pgculprit.column_stats(name[], name[]) FROM PUBLIC;
+GRANT USAGE ON SCHEMA pgculprit TO pgculprit;
+GRANT EXECUTE ON FUNCTION pgculprit.column_stats(name[], name[]) TO pgculprit;

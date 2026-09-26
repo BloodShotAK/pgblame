@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/BloodShotAK/pgblame/internal/catalog"
-	"github.com/BloodShotAK/pgblame/internal/detect"
-	"github.com/BloodShotAK/pgblame/internal/pgss"
-	"github.com/BloodShotAK/pgblame/internal/store"
+	"github.com/BloodShotAK/pgculprit/internal/catalog"
+	"github.com/BloodShotAK/pgculprit/internal/detect"
+	"github.com/BloodShotAK/pgculprit/internal/pgss"
+	"github.com/BloodShotAK/pgculprit/internal/store"
 )
 
 type Config struct {
@@ -243,7 +243,7 @@ func (c *Collector) catalog(ctx context.Context) error {
 		c.analyzed[t.TableKey] = t.AnalyzedAt
 	}
 	if !snap.ColumnsComplete && !c.warnedColumns {
-		c.log.Warn("pgblame.column_stats() is not installed; column statistics cover only columns this role can SELECT",
+		c.log.Warn("pgculprit.column_stats() is not installed; column statistics cover only columns this role can SELECT",
 			"database", snap.DBName)
 		c.warnedColumns = true
 	}

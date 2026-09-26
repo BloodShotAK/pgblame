@@ -108,8 +108,8 @@ func readSettings(ctx context.Context, q Querier, s *Snapshot) error {
 const columnChunk = 250
 
 func readColumns(ctx context.Context, q Querier, s *Snapshot) error {
-	if err := q.QueryRow(ctx, `SELECT to_regprocedure('pgblame.column_stats(name[],name[])') IS NOT NULL`).Scan(&s.ColumnsComplete); err != nil {
-		return fmt.Errorf("checking for pgblame.column_stats(): %w", err)
+	if err := q.QueryRow(ctx, `SELECT to_regprocedure('pgculprit.column_stats(name[],name[])') IS NOT NULL`).Scan(&s.ColumnsComplete); err != nil {
+		return fmt.Errorf("checking for pgculprit.column_stats(): %w", err)
 	}
 	var tables []TableKey
 	for _, t := range s.Tables {
@@ -136,7 +136,7 @@ func readColumnsHelper(ctx context.Context, q Querier, s *Snapshot, tables []Tab
 	for i, t := range tables {
 		schemas[i], names[i] = t.Schema, t.Table
 	}
-	rows, err := q.Query(ctx, `SELECT * FROM pgblame.column_stats($1::name[], $2::name[])`, schemas, names)
+	rows, err := q.Query(ctx, `SELECT * FROM pgculprit.column_stats($1::name[], $2::name[])`, schemas, names)
 	if err != nil {
 		return err
 	}

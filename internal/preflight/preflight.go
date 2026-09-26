@@ -1,4 +1,4 @@
-// Package preflight checks a server is ready for pgblame using plain SQL,
+// Package preflight checks a server is ready for pgculprit using plain SQL,
 // so it behaves the same on self-hosted and managed Postgres.
 package preflight
 
@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/BloodShotAK/pgblame/internal/pgss"
+	"github.com/BloodShotAK/pgculprit/internal/pgss"
 )
 
 type Status string
@@ -41,7 +41,7 @@ func Run(ctx context.Context, q Querier) []Result {
 	}
 	switch {
 	case version < pgss.MinServerVersionNum:
-		add(Result{"server version", Fail, fmt.Sprintf("%d", version), "pgblame needs PostgreSQL 14 or newer"})
+		add(Result{"server version", Fail, fmt.Sprintf("%d", version), "pgculprit needs PostgreSQL 14 or newer"})
 	case version < 160000:
 		add(Result{"server version", OK, fmt.Sprintf("%d; plan capture via EXPLAIN (GENERIC_PLAN) needs 16+", version), ""})
 	case version < 170000:
@@ -113,10 +113,10 @@ func Run(ctx context.Context, q Querier) []Result {
 	}
 
 	var helper bool
-	if err := q.QueryRow(ctx, `SELECT to_regprocedure('pgblame.column_stats(name[],name[])') IS NOT NULL`).Scan(&helper); err != nil {
+	if err := q.QueryRow(ctx, `SELECT to_regprocedure('pgculprit.column_stats(name[],name[])') IS NOT NULL`).Scan(&helper); err != nil {
 		add(Result{"column statistics helper", Fail, err.Error(), ""})
 	} else if !helper {
-		add(Result{"column statistics helper", Warn, "pgblame.column_stats() not installed; stats limited to columns this role can SELECT",
+		add(Result{"column statistics helper", Warn, "pgculprit.column_stats() not installed; stats limited to columns this role can SELECT",
 			"run deploy/target/helper.sql as the table owner or an administrator"})
 	} else {
 		add(Result{"column statistics helper", OK, "installed", ""})

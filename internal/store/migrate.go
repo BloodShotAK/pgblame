@@ -16,7 +16,7 @@ import (
 var migrations embed.FS
 
 // Stops two collectors migrating the same store at once.
-const migrationLock = 0x7067626c616d65 // "pgblame"
+const migrationLock = 0x706763756c707269 // "pgculpri"
 
 func (s *Store) Migrate(ctx context.Context) error {
 	conn, err := s.pool.Acquire(ctx)
@@ -30,7 +30,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 	defer conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock($1)`, int64(migrationLock))
 
-	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS pgblame_schema_migrations (
+	if _, err := conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS pgculprit_schema_migrations (
 		version    integer PRIMARY KEY,
 		applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
 		return fmt.Errorf("creating migrations table: %w", err)
@@ -52,13 +52,13 @@ func (s *Store) Migrate(ctx context.Context) error {
 		}
 		err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 			var applied bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pgblame_schema_migrations WHERE version = $1)`, version).Scan(&applied); err != nil || applied {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pgculprit_schema_migrations WHERE version = $1)`, version).Scan(&applied); err != nil || applied {
 				return err
 			}
 			if _, err := tx.Exec(ctx, string(body)); err != nil {
 				return err
 			}
-			_, err := tx.Exec(ctx, `INSERT INTO pgblame_schema_migrations (version) VALUES ($1)`, version)
+			_, err := tx.Exec(ctx, `INSERT INTO pgculprit_schema_migrations (version) VALUES ($1)`, version)
 			return err
 		})
 		if err != nil {

@@ -54,7 +54,7 @@ jobs:
           docker exec pg psql -U postgres -c 'CREATE EXTENSION pg_stat_statements'
       - run: go test -count=1 -run Integration ./...
         env:
-          PGBLAME_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+          PGCULPRIT_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
 
   # Detection accuracy against injected faults; results go to the run summary.
   harness:
@@ -68,7 +68,7 @@ jobs:
         run: |
           docker run -d --name target -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
             postgres:17 -c shared_preload_libraries=pg_stat_statements
-          docker run -d --name store -p 5433:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=pgblame postgres:17
+          docker run -d --name store -p 5433:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=pgculprit postgres:17
           for c in target store; do
             for i in $(seq 1 30); do
               docker exec $c pg_isready -h 127.0.0.1 -U postgres && break
@@ -78,5 +78,5 @@ jobs:
           docker exec target psql -U postgres -c 'CREATE EXTENSION pg_stat_statements'
       - run: go run ./cmd/harness -yes
         env:
-          PGBLAME_TARGET_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
-          PGBLAME_STORE_DSN: postgres://postgres:postgres@localhost:5433/pgblame?sslmode=disable
+          PGCULPRIT_TARGET_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+          PGCULPRIT_STORE_DSN: postgres://postgres:postgres@localhost:5433/pgculprit?sslmode=disable

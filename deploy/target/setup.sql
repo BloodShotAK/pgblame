@@ -3,6 +3,6 @@
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
 -- Local dev password only.
-CREATE ROLE pgblame LOGIN PASSWORD 'pgblame';
+CREATE ROLE pgculprit LOGIN PASSWORD 'pgculprit';
 
-GRANT pg_monitor TO pgblame;
+GRANT pg_monitor TO pgculprit;

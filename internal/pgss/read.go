@@ -31,7 +31,7 @@ func Read(ctx context.Context, q Querier, opts ReadOptions) (*Snapshot, error) {
 		return nil, fmt.Errorf("reading server version: %w", err)
 	}
 	if version < MinServerVersionNum {
-		return nil, fmt.Errorf("server version %d is older than PostgreSQL 14, which pgblame requires", version)
+		return nil, fmt.Errorf("server version %d is older than PostgreSQL 14, which pgculprit requires", version)
 	}
 
 	s := &Snapshot{ServerVersionNum: version, Entries: map[Key]Entry{}}

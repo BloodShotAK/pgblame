@@ -1,4 +1,4 @@
-// Package testpg connects integration tests to PGBLAME_TEST_DSN and skips them when it's unset.
+// Package testpg connects integration tests to PGCULPRIT_TEST_DSN and skips them when it's unset.
 package testpg
 
 import (
@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const envDSN = "PGBLAME_TEST_DSN"
+const envDSN = "PGCULPRIT_TEST_DSN"
 
 func Pool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -29,7 +29,7 @@ func Pool(t *testing.T) *pgxpool.Pool {
 func NewDatabase(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	admin := Pool(t)
-	name := Unique("pgblame_it")
+	name := Unique("pgculprit_it")
 	if _, err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil {
 		t.Fatalf("creating test database: %v", err)
 	}

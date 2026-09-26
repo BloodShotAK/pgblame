@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/BloodShotAK/pgblame/internal/pgss"
-	"github.com/BloodShotAK/pgblame/internal/testpg"
+	"github.com/BloodShotAK/pgculprit/internal/pgss"
+	"github.com/BloodShotAK/pgculprit/internal/testpg"
 )
 
 func TestIntegrationDeltasMatchWorkload(t *testing.T) {
@@ -16,7 +16,7 @@ func TestIntegrationDeltasMatchWorkload(t *testing.T) {
 	pool := testpg.Pool(t)
 
 	// A fresh table gives the probe a unique queryid (the table OID is part of it).
-	table := testpg.Unique("pgblame_probe")
+	table := testpg.Unique("pgculprit_probe")
 	mustExec(t, pool, "CREATE TABLE "+table+" (x int)")
 	t.Cleanup(func() { pool.Exec(context.Background(), "DROP TABLE IF EXISTS "+table) })
 	probe := "SELECT count(*) FROM " + table + " WHERE x = $1"

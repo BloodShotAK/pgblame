@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/BloodShotAK/pgblame/internal/detect"
+	"github.com/BloodShotAK/pgculprit/internal/detect"
 )
 
 // Series returns detection input for every query of the target with complete

@@ -1,4 +1,4 @@
-// Command overhead measures what pgblame's reads cost on a large database.
+// Command overhead measures what pgculprit's reads cost on a large database.
 // It creates (and drops) its own database, so point it at a disposable server.
 package main
 
@@ -13,14 +13,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/BloodShotAK/pgblame/internal/catalog"
-	"github.com/BloodShotAK/pgblame/internal/pgss"
+	"github.com/BloodShotAK/pgculprit/internal/catalog"
+	"github.com/BloodShotAK/pgculprit/internal/pgss"
 )
 
-const dbName = "pgblame_overhead"
+const dbName = "pgculprit_overhead"
 
 func main() {
-	dsn := flag.String("target-dsn", os.Getenv("PGBLAME_TARGET_DSN"), "superuser DSN for a disposable server")
+	dsn := flag.String("target-dsn", os.Getenv("PGCULPRIT_TARGET_DSN"), "superuser DSN for a disposable server")
 	tables := flag.Int("tables", 2000, "tables to create, each with 10 columns and 2 indexes")
 	yes := flag.Bool("yes", false, "confirm the target server is disposable")
 	reuse := flag.Bool("reuse", false, "keep the tables from a previous run")

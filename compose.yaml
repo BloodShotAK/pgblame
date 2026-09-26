@@ -30,7 +30,7 @@ services:
     <<: *postgres
     environment:
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: pgblame
+      POSTGRES_DB: pgculprit
     ports: ["54322:5432"]
 
   load:
@@ -56,7 +56,7 @@ services:
       target: { condition: service_healthy }
       store: { condition: service_healthy }
     environment:
-      PGBLAME_TARGET_DSN: postgres://pgblame:pgblame@target:5432/app?sslmode=disable
-      PGBLAME_STORE_DSN: postgres://postgres:postgres@store:5432/pgblame?sslmode=disable
+      PGCULPRIT_TARGET_DSN: postgres://pgculprit:pgculprit@target:5432/app?sslmode=disable
+      PGCULPRIT_STORE_DSN: postgres://postgres:postgres@store:5432/pgculprit?sslmode=disable
     command: ["collect", "--target-name=local", "--interval=15s", "--catalog-interval=30s", "--detect-interval=15s", "--window=2m"]
     restart: unless-stopped

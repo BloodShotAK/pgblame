@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/BloodShotAK/pgblame/internal/catalog"
-	"github.com/BloodShotAK/pgblame/internal/testpg"
+	"github.com/BloodShotAK/pgculprit/internal/catalog"
+	"github.com/BloodShotAK/pgculprit/internal/testpg"
 )
 
 func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
@@ -101,7 +101,7 @@ func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		exec(`DO $$ BEGIN
-		        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pgblame') THEN CREATE ROLE pgblame; END IF;
+		        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pgculprit') THEN CREATE ROLE pgculprit; END IF;
 		      END $$`)
 		exec(string(helper))
 		exec(`CREATE TABLE untouched (a int)`)

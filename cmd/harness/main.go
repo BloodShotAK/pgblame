@@ -1,4 +1,4 @@
-// Command harness measures pgblame's detection against injected faults. It
+// Command harness measures pgculprit's detection against injected faults. It
 // creates (and drops) its own database and role on the target server, so
 // point it at a disposable server only.
 package main
@@ -21,9 +21,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/BloodShotAK/pgblame/internal/collector"
-	"github.com/BloodShotAK/pgblame/internal/detect"
-	"github.com/BloodShotAK/pgblame/internal/store"
+	"github.com/BloodShotAK/pgculprit/internal/collector"
+	"github.com/BloodShotAK/pgculprit/internal/detect"
+	"github.com/BloodShotAK/pgculprit/internal/store"
 )
 
 type options struct {
@@ -43,8 +43,8 @@ type outcome struct {
 
 func main() {
 	var o options
-	flag.StringVar(&o.adminDSN, "target-dsn", os.Getenv("PGBLAME_TARGET_DSN"), "superuser DSN for a disposable server")
-	flag.StringVar(&o.storeDSN, "store-dsn", os.Getenv("PGBLAME_STORE_DSN"), "store DSN")
+	flag.StringVar(&o.adminDSN, "target-dsn", os.Getenv("PGCULPRIT_TARGET_DSN"), "superuser DSN for a disposable server")
+	flag.StringVar(&o.storeDSN, "store-dsn", os.Getenv("PGCULPRIT_STORE_DSN"), "store DSN")
 	flag.IntVar(&o.rate, "rate", 10, "calls per second for each workload query")
 	flag.DurationVar(&o.baseline, "baseline", time.Minute, "healthy period before each fault")
 	flag.DurationVar(&o.fault, "fault", 40*time.Second, "period after each fault")

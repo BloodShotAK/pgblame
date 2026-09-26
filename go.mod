@@ -1,4 +1,4 @@
-module github.com/BloodShotAK/pgblame
+module github.com/BloodShotAK/pgculprit
 
 go 1.26.0
 

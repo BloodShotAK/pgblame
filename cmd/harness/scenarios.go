@@ -3,10 +3,10 @@ package main
 import (
 	"math/rand/v2"
 
-	"github.com/BloodShotAK/pgblame/internal/detect"
+	"github.com/BloodShotAK/pgculprit/internal/detect"
 )
 
-const dbName = "pgblame_harness"
+const dbName = "pgculprit_harness"
 
 var schema = []string{
 	`CREATE TABLE customers (id int PRIMARY KEY, name text NOT NULL, visits int NOT NULL DEFAULT 0)`,

@@ -26,7 +26,7 @@ type MaintainResult struct {
 	DeletedSnapshot int64
 }
 
-const maintainLock = 0x7067626c616d6501
+const maintainLock = migrationLock + 1
 
 // Maintain keeps the store bounded: it creates upcoming daily partitions,
 // rolls finished hours up, and drops data past retention. Several collectors
