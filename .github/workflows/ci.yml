@@ -19,13 +19,15 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+  # Scans with the latest Go release, which is what the Dockerfile builds with;
+  # the go.mod minimum is an old patch release with known standard library bugs.
   vulnerabilities:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   integration:
