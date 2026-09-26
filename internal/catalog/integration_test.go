@@ -78,6 +78,23 @@ func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
 		t.Errorf("customer_id distribution shift not detected: %+v", colChanges)
 	}
 
+	// Before PG15, last_analyze reaches pg_stat_user_tables through the
+	// asynchronous stats collector, so wait until it shows.
+	analyze := func(table string) {
+		t.Helper()
+		var before *time.Time
+		db.QueryRow(ctx, `SELECT last_analyze FROM pg_stat_user_tables WHERE relname = $1`, table).Scan(&before)
+		exec(`ANALYZE ` + table)
+		for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+			var after *time.Time
+			db.QueryRow(ctx, `SELECT last_analyze FROM pg_stat_user_tables WHERE relname = $1`, table).Scan(&after)
+			if after != nil && (before == nil || after.After(*before)) {
+				return
+			}
+		}
+		t.Fatalf("ANALYZE %s never showed up in pg_stat_user_tables", table)
+	}
+
 	t.Run("only analyzed tables are re-read", func(t *testing.T) {
 		helper, err := os.ReadFile("../../deploy/target/helper.sql")
 		if err != nil {
@@ -89,7 +106,7 @@ func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
 		exec(string(helper))
 		exec(`CREATE TABLE untouched (a int)`)
 		exec(`INSERT INTO untouched SELECT generate_series(1, 100)`)
-		exec(`ANALYZE untouched`)
+		analyze("untouched")
 
 		full := read()
 		if !full.ColumnsComplete {
@@ -108,12 +125,12 @@ func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
 			t.Errorf("nothing was analyzed, yet read %d columns from %v", len(idle.Columns), idle.ColumnTables)
 		}
 
-		exec(`ANALYZE orders`)
+		analyze("orders")
+		orders := catalog.TableKey{Schema: "public", Table: "orders"}
 		inc, err := catalog.Read(ctx, db, analyzed)
 		if err != nil {
 			t.Fatal(err)
 		}
-		orders := catalog.TableKey{Schema: "public", Table: "orders"}
 		if len(inc.ColumnTables) != 1 || !inc.ColumnTables[orders] || len(inc.Columns) == 0 {
 			t.Fatalf("want columns of orders only, got tables %v and %d columns", inc.ColumnTables, len(inc.Columns))
 		}
