@@ -116,7 +116,7 @@ func Texts(ctx context.Context, q Querier, keys []Key) (map[Key]string, error) {
 			return nil, fmt.Errorf("scanning query text: %w", err)
 		}
 		if want[k] {
-			out[k] = text
+			out[k] = Redact(text)
 		}
 	}
 	return out, rows.Err()
