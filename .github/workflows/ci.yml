@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   unit:
     runs-on: ubuntu-latest
@@ -15,6 +18,15 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test ./...
+
+  vulnerabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
   integration:
     runs-on: ubuntu-latest
@@ -41,3 +53,28 @@ jobs:
       - run: go test -count=1 -run Integration ./...
         env:
           PGBLAME_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+
+  # Detection accuracy against injected faults; results go to the run summary.
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Start target and store
+        run: |
+          docker run -d --name target -p 5432:5432 -e POSTGRES_PASSWORD=postgres \
+            postgres:17 -c shared_preload_libraries=pg_stat_statements
+          docker run -d --name store -p 5433:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=pgblame postgres:17
+          for c in target store; do
+            for i in $(seq 1 30); do
+              docker exec $c pg_isready -h 127.0.0.1 -U postgres && break
+              sleep 1
+            done
+          done
+          docker exec target psql -U postgres -c 'CREATE EXTENSION pg_stat_statements'
+      - run: go run ./cmd/harness -yes
+        env:
+          PGBLAME_TARGET_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+          PGBLAME_STORE_DSN: postgres://postgres:postgres@localhost:5433/pgblame?sslmode=disable
