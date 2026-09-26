@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ type CatalogChanges struct {
 	Baseline bool
 	Indexes  []catalog.Change[catalog.IndexKey, catalog.Index]
 	Settings []catalog.Change[string, catalog.Setting]
+	Tables   []catalog.Change[catalog.TableKey, catalog.TableSize]
 	Columns  []catalog.Change[catalog.ColumnKey, catalog.ColumnStats]
 }
 
@@ -69,33 +71,75 @@ var columnTable = versionTable[catalog.ColumnKey, catalog.ColumnStats]{
 	changed: catalog.StatsShifted,
 }
 
+var tableTable = versionTable[catalog.TableKey, catalog.TableSize]{
+	name:    "table_stat_versions",
+	keyCols: []string{"schema_name", "table_name"},
+	valCols: []string{"reltuples", "relpages"},
+	keyVals: func(k catalog.TableKey) []any { return []any{k.Schema, k.Table} },
+	valVals: func(v catalog.TableSize) []any { return []any{v.RelTuples, v.RelPages} },
+	scan: func(r pgx.Rows) (k catalog.TableKey, v catalog.TableSize, err error) {
+		err = r.Scan(&k.Schema, &k.Table, &v.RelTuples, &v.RelPages)
+		return
+	},
+	changed: catalog.SizeShifted,
+}
+
 func (s *Store) ApplyCatalog(ctx context.Context, targetID int64, snap *catalog.Snapshot) (CatalogChanges, error) {
 	var out CatalogChanges
+	tables := make(map[catalog.TableKey]catalog.TableSize, len(snap.Tables))
+	for _, t := range snap.Tables {
+		tables[t.TableKey] = t.TableSize
+	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		var err error
-		var noIndexes, noSettings, noColumns bool
-		if out.Indexes, noIndexes, err = applyVersions(ctx, tx, indexTable, targetID, snap.DBName, snap.Indexes, snap.TakenAt); err != nil {
+		var noIndexes, noSettings, noTables bool
+		if out.Indexes, noIndexes, err = applyVersions(ctx, tx, indexTable, targetID, snap.DBName, snap.Indexes, snap.TakenAt, nil); err != nil {
 			return err
 		}
-		if out.Settings, noSettings, err = applyVersions(ctx, tx, settingTable, targetID, snap.DBName, snap.Settings, snap.TakenAt); err != nil {
+		if out.Settings, noSettings, err = applyVersions(ctx, tx, settingTable, targetID, snap.DBName, snap.Settings, snap.TakenAt, nil); err != nil {
 			return err
 		}
-		if out.Columns, noColumns, err = applyVersions(ctx, tx, columnTable, targetID, snap.DBName, snap.Columns, snap.TakenAt); err != nil {
+		if out.Tables, noTables, err = applyVersions(ctx, tx, tableTable, targetID, snap.DBName, tables, snap.TakenAt, nil); err != nil {
 			return err
 		}
-		// A new database may have no indexes or stats yet, so only an empty
-		// record everywhere counts as a first visit.
-		out.Baseline = noIndexes && noSettings && noColumns
-		return writeTableStats(ctx, tx, targetID, snap)
+		// A new database may have no indexes yet, so only an empty record
+		// everywhere counts as a first visit.
+		out.Baseline = noIndexes && noSettings && noTables
+		// Columns of tables that weren't re-read stay as recorded; dropped
+		// tables are added to the scope so their columns get closed.
+		var scope []catalog.TableKey
+		if snap.ColumnTables != nil {
+			scope = slices.Collect(maps.Keys(snap.ColumnTables))
+			for _, c := range out.Tables {
+				if c.Kind == catalog.Removed {
+					scope = append(scope, c.Key)
+				}
+			}
+			if len(scope) == 0 {
+				return nil
+			}
+		}
+		out.Columns, _, err = applyVersions(ctx, tx, columnTable, targetID, snap.DBName, snap.Columns, snap.TakenAt, scope)
+		return err
 	})
 	return out, err
 }
 
-func applyVersions[K comparable, V any](ctx context.Context, tx pgx.Tx, t versionTable[K, V], targetID int64, dbname string, observed map[K]V, at time.Time) ([]catalog.Change[K, V], bool, error) {
+// applyVersions diffs observed against the open versions and records the
+// changes. A non-nil scope limits both sides to those tables.
+func applyVersions[K comparable, V any](ctx context.Context, tx pgx.Tx, t versionTable[K, V], targetID int64, dbname string, observed map[K]V, at time.Time, scope []catalog.TableKey) ([]catalog.Change[K, V], bool, error) {
 	cols := slices.Concat(t.keyCols, t.valCols)
-	rows, err := tx.Query(ctx, fmt.Sprintf(
-		`SELECT %s FROM %s WHERE target_id = $1 AND dbname = $2 AND valid_to IS NULL`,
-		strings.Join(cols, ", "), t.name), targetID, dbname)
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE target_id = $1 AND dbname = $2 AND valid_to IS NULL`, strings.Join(cols, ", "), t.name)
+	args := []any{targetID, dbname}
+	if scope != nil {
+		var schemas, names []string
+		for _, k := range scope {
+			schemas, names = append(schemas, k.Schema), append(names, k.Table)
+		}
+		query += ` AND (schema_name, table_name) IN (SELECT * FROM unnest($3::text[], $4::text[]))`
+		args = append(args, schemas, names)
+	}
+	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
 		return nil, false, fmt.Errorf("loading %s: %w", t.name, err)
 	}
@@ -138,22 +182,4 @@ func applyVersions[K comparable, V any](ctx context.Context, tx pgx.Tx, t versio
 		return nil, false, fmt.Errorf("writing %s: %w", t.name, err)
 	}
 	return changes, len(recorded) == 0, nil
-}
-
-func writeTableStats(ctx context.Context, tx pgx.Tx, targetID int64, snap *catalog.Snapshot) error {
-	rows := make([][]any, 0, len(snap.Tables))
-	for _, t := range snap.Tables {
-		rows = append(rows, []any{
-			targetID, snap.DBName, snap.TakenAt, t.Schema, t.Table,
-			t.RelTuples, t.RelPages, t.LiveTuples, t.DeadTuples, t.LastAnalyze, t.LastAutoanalyze,
-		})
-	}
-	_, err := tx.CopyFrom(ctx, pgx.Identifier{"table_stat_samples"}, []string{
-		"target_id", "dbname", "taken_at", "schema_name", "table_name",
-		"reltuples", "relpages", "n_live_tup", "n_dead_tup", "last_analyze", "last_autoanalyze",
-	}, pgx.CopyFromRows(rows))
-	if err != nil {
-		return fmt.Errorf("writing table statistics: %w", err)
-	}
-	return nil
 }

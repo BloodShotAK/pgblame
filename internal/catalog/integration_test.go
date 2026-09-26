@@ -2,7 +2,9 @@ package catalog_test
 
 import (
 	"context"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/BloodShotAK/pgblame/internal/catalog"
 	"github.com/BloodShotAK/pgblame/internal/testpg"
@@ -19,7 +21,7 @@ func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
 	}
 	read := func() *catalog.Snapshot {
 		t.Helper()
-		s, err := catalog.Read(ctx, db)
+		s, err := catalog.Read(ctx, db, nil)
 		if err != nil {
 			t.Fatalf("Read: %v", err)
 		}
@@ -75,4 +77,50 @@ func TestIntegrationCatalogExplainsPlanChanges(t *testing.T) {
 	if !found {
 		t.Errorf("customer_id distribution shift not detected: %+v", colChanges)
 	}
+
+	t.Run("only analyzed tables are re-read", func(t *testing.T) {
+		helper, err := os.ReadFile("../../deploy/target/helper.sql")
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec(`DO $$ BEGIN
+		        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pgblame') THEN CREATE ROLE pgblame; END IF;
+		      END $$`)
+		exec(string(helper))
+		exec(`CREATE TABLE untouched (a int)`)
+		exec(`INSERT INTO untouched SELECT generate_series(1, 100)`)
+		exec(`ANALYZE untouched`)
+
+		full := read()
+		if !full.ColumnsComplete {
+			t.Fatal("helper installed but not used")
+		}
+		analyzed := map[catalog.TableKey]time.Time{}
+		for _, tb := range full.Tables {
+			analyzed[tb.TableKey] = tb.AnalyzedAt
+		}
+
+		idle, err := catalog.Read(ctx, db, analyzed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(idle.ColumnTables) != 0 || len(idle.Columns) != 0 {
+			t.Errorf("nothing was analyzed, yet read %d columns from %v", len(idle.Columns), idle.ColumnTables)
+		}
+
+		exec(`ANALYZE orders`)
+		inc, err := catalog.Read(ctx, db, analyzed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		orders := catalog.TableKey{Schema: "public", Table: "orders"}
+		if len(inc.ColumnTables) != 1 || !inc.ColumnTables[orders] || len(inc.Columns) == 0 {
+			t.Fatalf("want columns of orders only, got tables %v and %d columns", inc.ColumnTables, len(inc.Columns))
+		}
+		for k := range inc.Columns {
+			if k.Table != "orders" {
+				t.Errorf("read column of %s", k.Table)
+			}
+		}
+	})
 }

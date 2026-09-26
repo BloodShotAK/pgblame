@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -18,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/BloodShotAK/pgblame/internal/collector"
+	"github.com/BloodShotAK/pgblame/internal/detect"
 	"github.com/BloodShotAK/pgblame/internal/preflight"
 	"github.com/BloodShotAK/pgblame/internal/store"
 )
@@ -30,6 +33,7 @@ Usage:
   pgblame check   --target-dsn DSN    verify a server is ready to be monitored
   pgblame collect --target-dsn DSN --store-dsn DSN
                                         poll the server and record what it runs
+  pgblame regressions --store-dsn DSN show queries that got slower than their baseline
   pgblame top     --store-dsn DSN     show the busiest recorded queries
   pgblame version
 
@@ -51,6 +55,8 @@ func main() {
 		err = runCheck(ctx, args)
 	case "collect":
 		err = runCollect(ctx, args)
+	case "regressions":
+		err = runRegressions(ctx, args)
 	case "top":
 		err = runTop(ctx, args)
 	case "version":
@@ -80,6 +86,21 @@ func connect(ctx context.Context, what, dsn string) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("parsing %s DSN: %w", what, err)
 	}
 	cfg.ConnConfig.RuntimeParams["application_name"] = "pgblame"
+	if what == "target" {
+		// pgblame is a guest on the monitored server: at most two sessions,
+		// read-only, and it gives up rather than wait on locks or run long.
+		cfg.MaxConns = 2
+		for k, v := range map[string]string{
+			"default_transaction_read_only":       "on",
+			"statement_timeout":                   "10s",
+			"lock_timeout":                        "1s",
+			"idle_in_transaction_session_timeout": "30s",
+		} {
+			if _, set := cfg.ConnConfig.RuntimeParams[k]; !set {
+				cfg.ConnConfig.RuntimeParams[k] = v
+			}
+		}
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to %s: %w", what, err)
@@ -125,6 +146,11 @@ func runCollect(ctx context.Context, args []string) error {
 	name := fs.String("target-name", "", "stable name for the target (default host:port/database)")
 	interval := fs.Duration("interval", time.Minute, "how often to poll pg_stat_statements")
 	catalogInterval := fs.Duration("catalog-interval", 5*time.Minute, "how often to snapshot the catalog")
+	detectInterval := fs.Duration("detect-interval", time.Minute, "how often to look for regressions (0 disables)")
+	detectCfg := detectFlags(fs)
+	retention := store.DefaultRetention()
+	fs.DurationVar(&retention.Raw, "raw-retention", retention.Raw, "how long per-interval samples are kept")
+	fs.DurationVar(&retention.Hourly, "hourly-retention", retention.Hourly, "how long hourly rollups are kept")
 	includeSelf := fs.Bool("include-self", false, "keep pgblame's own queries in the data")
 	logFormat := fs.String("log-format", "text", "text or json")
 	verbose := fs.Bool("v", false, "debug logging")
@@ -156,6 +182,9 @@ func runCollect(ctx context.Context, args []string) error {
 		TargetName:      *name,
 		Interval:        *interval,
 		CatalogInterval: *catalogInterval,
+		DetectInterval:  *detectInterval,
+		Detect:          *detectCfg,
+		Retention:       retention,
 		IncludeSelf:     *includeSelf,
 	}, log).Run(ctx)
 }
@@ -187,6 +216,87 @@ func runTop(ctx context.Context, args []string) error {
 		fmt.Fprintf(w, "%d\t%.0f\t%.3f\t%.1f\t %s\t %s\t\n", t.Calls, t.TotalMS, t.MeanMS, t.RowsCall, t.DBName, oneLine(t.Text, 70))
 	}
 	return w.Flush()
+}
+
+func detectFlags(fs *flag.FlagSet) *detect.Config {
+	c := detect.DefaultConfig()
+	fs.DurationVar(&c.Window, "window", c.Window, "recent period to judge")
+	fs.DurationVar(&c.Trailing, "trailing", c.Trailing, "baseline period before the window, used when prior weeks lack data")
+	fs.Float64Var(&c.MinRatio, "min-ratio", c.MinRatio, "minimum slowdown, as current / baseline latency")
+	fs.Float64Var(&c.MinZ, "min-z", c.MinZ, "minimum robust z-score")
+	fs.DurationVar(&c.MinExtraPerHour, "min-extra", c.MinExtraPerHour, "minimum extra database time per hour")
+	return &c
+}
+
+func runRegressions(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("regressions", flag.ExitOnError)
+	storeDSN := dsnFlag(fs, "store-dsn", "PGBLAME_STORE_DSN", "database pgblame writes to")
+	targetName := fs.String("target", "", "target name (needed when the store has several)")
+	cfg := detectFlags(fs)
+	fs.Parse(args)
+
+	pool, err := connect(ctx, "store", *storeDSN)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	st := store.New(pool)
+
+	targetID, err := pickTarget(ctx, st, *targetName)
+	if err != nil {
+		return err
+	}
+	now, err := st.LatestSnapshot(ctx, targetID)
+	if err != nil {
+		return err
+	}
+	series, err := st.Series(ctx, targetID, *cfg, now)
+	if err != nil {
+		return err
+	}
+	found, healthy := detect.Scan(series, now, *cfg)
+	fmt.Printf("as of %s: %d regressed, %d healthy, %d with too little traffic to judge\n\n",
+		now.Local().Format(time.DateTime), len(found), len(healthy), len(series)-len(found)-len(healthy))
+	if len(found) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, len(found))
+	for i, f := range found {
+		ids[i] = f.QueryID
+	}
+	info, err := st.QueryInfo(ctx, ids)
+	if err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.AlignRight)
+	fmt.Fprintln(w, "extra/hour\tbaseline ms\tnow ms\tratio\tcalls\t kind\t query\t")
+	for _, f := range found {
+		fmt.Fprintf(w, "%s\t%.3f\t%.3f\t%.1fx\t%d\t %s\t %s\t\n",
+			f.ExtraPerHour.Round(time.Millisecond), f.BaselineMS, f.CurrentMS, f.Ratio, f.Calls, f.Kind, oneLine(info[f.QueryID].Text, 60))
+	}
+	return w.Flush()
+}
+
+func pickTarget(ctx context.Context, st *store.Store, name string) (int64, error) {
+	targets, err := st.Targets(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if name != "" {
+		id, ok := targets[name]
+		if !ok {
+			return 0, fmt.Errorf("no target named %q", name)
+		}
+		return id, nil
+	}
+	if len(targets) == 1 {
+		for _, id := range targets {
+			return id, nil
+		}
+	}
+	names := slices.Sorted(maps.Keys(targets))
+	return 0, fmt.Errorf("pick a target with --target: %s", strings.Join(names, ", "))
 }
 
 func oneLine(s string, max int) string {

@@ -42,6 +42,9 @@ services:
       PGUSER: postgres
       PGPASSWORD: postgres
       PGDATABASE: app
+      # Small enough that the regression demo's sequential scans stay laptop-friendly.
+      SCALE: "2"
+      RATE: "20"
     volumes:
       - ./deploy/load/pgbench.sh:/pgbench.sh:ro
     entrypoint: ["sh", "/pgbench.sh"]
@@ -55,5 +58,5 @@ services:
     environment:
       PGBLAME_TARGET_DSN: postgres://pgblame:pgblame@target:5432/app?sslmode=disable
       PGBLAME_STORE_DSN: postgres://postgres:postgres@store:5432/pgblame?sslmode=disable
-    command: ["collect", "--target-name=local", "--interval=15s", "--catalog-interval=30s"]
+    command: ["collect", "--target-name=local", "--interval=15s", "--catalog-interval=30s", "--detect-interval=15s", "--window=2m"]
     restart: unless-stopped

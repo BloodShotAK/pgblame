@@ -26,23 +26,44 @@ func (s *Store) EnsureTarget(ctx context.Context, name string) (int64, error) {
 	return id, err
 }
 
-func (s *Store) QueryIDs(ctx context.Context, targetID int64) (map[pgss.Key]int64, error) {
-	rows, err := s.pool.Query(ctx, `SELECT dbid, userid, queryid, toplevel, id FROM queries WHERE target_id = $1`, targetID)
+func (s *Store) QueryIDs(ctx context.Context, targetID int64) (ids, missingText map[pgss.Key]int64, err error) {
+	rows, err := s.pool.Query(ctx, `SELECT dbid, userid, queryid, toplevel, id, query_text IS NULL FROM queries WHERE target_id = $1`, targetID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
-	out := map[pgss.Key]int64{}
+	ids, missingText = map[pgss.Key]int64{}, map[pgss.Key]int64{}
 	for rows.Next() {
 		var dbid, userid, id int64
 		var k pgss.Key
-		if err := rows.Scan(&dbid, &userid, &k.QueryID, &k.TopLevel, &id); err != nil {
-			return nil, err
+		var noText bool
+		if err := rows.Scan(&dbid, &userid, &k.QueryID, &k.TopLevel, &id, &noText); err != nil {
+			return nil, nil, err
 		}
 		k.DBID, k.UserID = uint32(dbid), uint32(userid)
-		out[k] = id
+		ids[k] = id
+		if noText {
+			missingText[k] = id
+		}
 	}
-	return out, rows.Err()
+	return ids, missingText, rows.Err()
+}
+
+func (s *Store) SetQueryTexts(ctx context.Context, texts map[int64]string) error {
+	if len(texts) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(texts))
+	vals := make([]string, 0, len(texts))
+	for id, t := range texts {
+		ids = append(ids, id)
+		vals = append(vals, t)
+	}
+	_, err := s.pool.Exec(ctx, `
+		UPDATE queries q SET query_text = t.text
+		FROM unnest($1::bigint[], $2::text[]) t (id, text)
+		WHERE q.id = t.id AND q.query_text IS NULL`, ids, vals)
+	return err
 }
 
 type NewQuery struct {

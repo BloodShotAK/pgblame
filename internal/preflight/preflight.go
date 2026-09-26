@@ -89,8 +89,31 @@ func Run(ctx context.Context, q Querier) []Result {
 		add(Result{"privileges", OK, "member of pg_read_all_stats", ""})
 	}
 
+	var super bool
+	if err := q.QueryRow(ctx, `SELECT rolsuper FROM pg_roles WHERE rolname = current_user`).Scan(&super); err == nil && super {
+		add(Result{"least privilege", Warn, "connected as a superuser",
+			"use a dedicated role with only pg_monitor (see deploy/target/setup.sql)"})
+	}
+
+	// A unix socket has no server address; loopback traffic never leaves the host.
+	var ssl, local bool
+	err := q.QueryRow(ctx, `
+		SELECT coalesce((SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()), false),
+		       coalesce(inet_server_addr() <<= '127.0.0.0/8' OR inet_server_addr() = '::1', true)`).Scan(&ssl, &local)
+	switch {
+	case err != nil:
+		add(Result{"encryption", Warn, err.Error(), ""})
+	case ssl:
+		add(Result{"encryption", OK, "TLS", ""})
+	case local:
+		add(Result{"encryption", OK, "local connection", ""})
+	default:
+		add(Result{"encryption", Warn, "connection is not encrypted; query texts and credentials cross the network in clear",
+			"add sslmode=verify-full (with sslrootcert) to the DSN"})
+	}
+
 	var helper bool
-	if err := q.QueryRow(ctx, `SELECT to_regprocedure('pgblame.column_stats()') IS NOT NULL`).Scan(&helper); err != nil {
+	if err := q.QueryRow(ctx, `SELECT to_regprocedure('pgblame.column_stats(name[],name[])') IS NOT NULL`).Scan(&helper); err != nil {
 		add(Result{"column statistics helper", Fail, err.Error(), ""})
 	} else if !helper {
 		add(Result{"column statistics helper", Warn, "pgblame.column_stats() not installed; stats limited to columns this role can SELECT",

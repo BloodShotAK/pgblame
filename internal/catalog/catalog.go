@@ -38,22 +38,30 @@ type ColumnStats struct {
 	Correlation *float64
 }
 
+type TableKey struct {
+	Schema, Table string
+}
+
 type TableStats struct {
-	Schema, Table   string
-	RelTuples       int64
-	RelPages        int32
-	LiveTuples      int64
-	DeadTuples      int64
-	LastAnalyze     *time.Time
-	LastAutoanalyze *time.Time
+	TableKey
+	TableSize
+	// zero if never analyzed
+	AnalyzedAt time.Time
+}
+
+type TableSize struct {
+	RelTuples int64
+	RelPages  int32
 }
 
 type Snapshot struct {
-	TakenAt         time.Time
-	DBName          string
-	Indexes         map[IndexKey]Index
-	Settings        map[string]Setting
-	Columns         map[ColumnKey]ColumnStats
+	TakenAt  time.Time
+	DBName   string
+	Indexes  map[IndexKey]Index
+	Settings map[string]Setting
+	Columns  map[ColumnKey]ColumnStats
+	// Tables whose column statistics were read; nil means all of them.
+	ColumnTables    map[TableKey]bool
 	ColumnsComplete bool
 	Tables          []TableStats
 }
@@ -119,4 +127,22 @@ func nDistinctShifted(old, cur float64) bool {
 	}
 	a, b := math.Abs(old), math.Abs(cur)
 	return math.Max(a, b)/math.Min(a, b) >= 2
+}
+
+// SizeShifted ignores the growth every busy table sees between ANALYZE runs
+// and flags size changes large enough to change plans.
+func SizeShifted(old, cur TableSize) bool {
+	return sizeRatio(float64(old.RelTuples), float64(cur.RelTuples)) >= 1.2 ||
+		sizeRatio(float64(old.RelPages), float64(cur.RelPages)) >= 1.2
+}
+
+func sizeRatio(a, b float64) float64 {
+	a, b = max(a, 0), max(b, 0)
+	if a == b {
+		return 1
+	}
+	if min(a, b) == 0 {
+		return math.Inf(1)
+	}
+	return max(a, b) / min(a, b)
 }

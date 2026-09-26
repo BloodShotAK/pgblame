@@ -49,7 +49,7 @@ func TestIntegrationStoreRoundTrip(t *testing.T) {
 			t.Fatalf("interval: %v", err)
 		}
 
-		known, err := s.QueryIDs(ctx, target)
+		known, _, err := s.QueryIDs(ctx, target)
 		if err != nil || known[key] != ids[key] {
 			t.Fatalf("QueryIDs = %v (err %v), want %v", known, err, ids)
 		}
@@ -70,7 +70,7 @@ func TestIntegrationStoreRoundTrip(t *testing.T) {
 				TakenAt: at, DBName: "app", Indexes: indexes,
 				Settings: map[string]catalog.Setting{"random_page_cost": {Value: rpc, Source: "default"}},
 				Columns:  map[catalog.ColumnKey]catalog.ColumnStats{},
-				Tables:   []catalog.TableStats{{Schema: "public", Table: "orders", RelTuples: 5000}},
+				Tables:   []catalog.TableStats{{TableKey: catalog.TableKey{Schema: "public", Table: "orders"}, TableSize: catalog.TableSize{RelTuples: 5000}}},
 			}
 		}
 
